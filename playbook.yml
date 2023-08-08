@@ -1,0 +1,126 @@
+---
+- name: Install Apache HTTP Server
+  hosts: server1
+  become: true
+  tasks:
+    - name: Install firewalld Server
+      package:
+        name: firewalld
+        state: present
+      
+    - name: Start and enable firewalld Server
+      service:
+        name: firewalld
+        state: started
+        enabled: yes
+    
+    - name: Install mariadb Server
+      package:
+        name: mariadb-server
+        state: present
+      
+    - name: Start and enable mariadb Server
+      service:
+        name: mariadb
+        state: started
+        enabled: yes
+    
+    - name: Allow port 3306/tcp in firewall
+      shell: "firewall-cmd --permanent --zone=public --add-port=3306/tcp"
+    
+    - name: Reload firewall rules
+      shell: "firewall-cmd --reload"
+
+    - name: Install pymysql
+      pip:
+        name: pymysql
+        executable: pip3  
+    
+    - name: load SQL script to AWS ec2
+      copy:
+        src:  db-load-script.sql
+        dest: /home/ec2-user/db-load-script.sql
+        # remote_src: yes
+    
+    - name: Create the database
+      mysql_db:
+        name: ecomdb
+        state: import
+        target: /home/ec2-user/db-load-script.sql
+        force: true
+
+    - name: Create the user and grant all permissions
+      mysql_user:
+        name: ecomuser
+        password: ecompassword
+        priv: "*.*:ALL"
+        state: present
+        host: localhost
+        login_user: root
+        login_password: ''
+
+    - name: Start and enable mariadb Server
+      service:
+        name: mariadb
+        state: restarted
+
+#   mysql -u root -p
+# CREATE DATABASE ecomdb;
+# CREATE USER 'ecomuser'@'localhost' IDENTIFIED BY 'ecompassword';
+# GRANT ALL PRIVILEGES ON *.* TO 'ecomuser'@'localhost';
+# FLUSH PRIVILEGES;
+
+    - name: Install Apache HTTP Server
+      package:
+        name: httpd
+        state: present
+    
+    - name: Start and enable Apache HTTP Server
+      service:
+        name: httpd
+        state: started
+        enabled: yes
+    
+    - name: Install php package
+      yum:
+        name: php
+        state: present
+
+
+    - name: Install php-mysql package
+      yum:
+        name: php-mysql
+        state: present
+
+    - name: Allow port 80/tcp in firewall
+      shell: "firewall-cmd --permanent --zone=public --add-port=80/tcp"
+
+    - name: Reload firewall rules
+      shell: "firewall-cmd --reload"
+    
+    - name: Replace string in httpd.conf
+      replace:
+        path: /etc/httpd/conf/httpd.conf
+        regexp: 'index.html'
+        replace: 'index.php'
+    
+    - name: Restart httpd service
+      service:
+        name: httpd
+        state: restarted
+    
+    - name: Install Git package
+      yum:
+        name: git
+        state: present
+
+    - name: Clone the repository
+      git:
+        repo: https://github.com/kodekloudhub/learning-app-ecommerce.git
+        dest: /var/www/html/
+    
+    - name: Change DirectoryIndex index.html to DirectoryIndex index.php to make the php page the default page
+      replace:
+        path: /var/www/html/index.php
+        regexp: '172.20.1.101'
+        replace: 'localhost'
